@@ -127,11 +127,8 @@ fn decode_sprite(
                 return Some(decoded);
             }
         }
-        if let Some(file) = loose_root.and_then(|root| loose_addon_file(root, candidate)) {
-            if let Ok(decoded) = std::fs::read(&file)
-                .map_err(anyhow::Error::from)
-                .and_then(|bytes| decode_sprite_bytes(&bytes))
-            {
+        if let Some(bytes) = loose_root.and_then(|root| read_loose_addon(root, candidate)) {
+            if let Ok(decoded) = decode_sprite_bytes(&bytes) {
                 return Some(decoded);
             }
         }
@@ -141,7 +138,7 @@ fn decode_sprite(
         .iter()
         .filter(|c| {
             chain.read_file(c).is_ok()
-                || loose_root.is_some_and(|root| loose_addon_file(root, c).is_some())
+                || loose_root.is_some_and(|root| loose_addon_exists(root, c))
         })
         .collect();
     if found_but_undecodable.is_empty() {
@@ -189,8 +186,41 @@ pub fn read_chain_or_loose(
     if let Ok(bytes) = chain.lock_recover().read(path) {
         return Some(bytes);
     }
-    let file = loose_addon_file(loose_root?, &normalize_path(path))?;
-    std::fs::read(file).ok()
+    read_loose_addon(loose_root?, &normalize_path(path))
+}
+
+/// The bytes of a normalized `interface\addons\…` path under the addon root: the file
+/// [`loose_addon_file`] maps it to, or on the page, where there is no filesystem, the page's
+/// AddOns store ([`benilla_formats::web_addons`]).
+pub fn read_loose_addon(root: &Path, candidate: &str) -> Option<Vec<u8>> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = root;
+        return addon_rel(candidate).and_then(benilla_formats::web_addons::read);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    std::fs::read(loose_addon_file(root, candidate)?).ok()
+}
+
+/// Whether [`read_loose_addon`] would find the file, without reading it.
+pub fn loose_addon_exists(root: &Path, candidate: &str) -> bool {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = root;
+        return addon_rel(candidate).is_some_and(benilla_formats::web_addons::exists);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    loose_addon_file(root, candidate).is_some()
+}
+
+/// The part of a normalized candidate under the AddOns root, refusing a dot-component as
+/// [`loose_addon_file`] does.
+#[cfg(target_arch = "wasm32")]
+fn addon_rel(candidate: &str) -> Option<&str> {
+    let rel = candidate.strip_prefix("interface\\addons\\")?;
+    rel.split('\\')
+        .all(|c| !c.is_empty() && !c.starts_with('.'))
+        .then_some(rel)
 }
 
 /// Map a normalized `interface\addons\…` path onto a file under the addon root, matching each

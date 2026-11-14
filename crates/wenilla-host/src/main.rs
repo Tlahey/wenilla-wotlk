@@ -46,6 +46,10 @@ struct Cli {
     /// next one in the client's table. Every locale folder is served under `/data/__l/{locale}/`.
     #[arg(long)]
     locale: Option<String>,
+    /// A folder of admin addons (`<Name>/<Name>.toc`), served read-only under `/addons/` and
+    /// listed in every player's AddOns folder beside the ones they import into their browser.
+    #[arg(long)]
+    addons: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -73,6 +77,13 @@ async fn main() -> Result<()> {
             wenilla_host::ALLOWED_PORTS,
         ))
         .merge(wenilla_host::static_site::router(&cli.www));
+    let app = match &cli.addons {
+        Some(dir) => {
+            tracing::info!(addons = %dir.display(), files = wenilla_host::addons::catalog(dir).len(), "serving addons");
+            app.merge(wenilla_host::addons::router(dir.clone()))
+        }
+        None => app,
+    };
 
     let listener = tokio::net::TcpListener::bind(&cli.bind)
         .await

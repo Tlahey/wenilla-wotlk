@@ -8,6 +8,18 @@ use std::borrow::Cow;
 
 const BOM: &[u8] = &[0xEF, 0xBB, 0xBF];
 
+/// On the page, where [`read_under`]'s root (the AddOns folder) has no filesystem behind it, the
+/// reader that answers in its place: a path relative to the AddOns root, `/`-separated.
+#[cfg(target_arch = "wasm32")]
+static WEB_ADDON_READER: std::sync::OnceLock<fn(&str) -> Option<Vec<u8>>> =
+    std::sync::OnceLock::new();
+
+/// Seat [`read_under`]'s page reader; the first call wins.
+#[cfg(target_arch = "wasm32")]
+pub fn set_web_addon_reader(reader: fn(&str) -> Option<Vec<u8>>) {
+    let _ = WEB_ADDON_READER.set(reader);
+}
+
 /// Read `root/rel` as the reference's Windows filesystem would: each component matched without
 /// regard to ASCII case. Refuses a path that leaves `root` lexically before any filesystem call
 /// (`join_ref` has already resolved `..`, so an escape shows as a leading one, or anything
@@ -17,6 +29,11 @@ pub fn read_under(root: &std::path::Path, rel: &str) -> Option<Vec<u8>> {
     let rel = std::path::Path::new(rel);
     if rel.components().any(|c| !matches!(c, Component::Normal(_))) {
         return None;
+    }
+    // The page has no filesystem: its AddOns folder is the page's store, which the host seats.
+    #[cfg(target_arch = "wasm32")]
+    if let Some(reader) = WEB_ADDON_READER.get() {
+        return reader(&rel.to_string_lossy());
     }
     let mut path = root.to_path_buf();
     for component in rel.components() {

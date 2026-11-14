@@ -24,6 +24,8 @@ pub use tga::tga_to_rgba;
 mod install;
 /// Web-target chain plumbing (HTTP in place of a filesystem); browser-only pieces are gated inside.
 pub mod web;
+/// The page's AddOns folder (served + browser-local addons); empty off the page.
+pub mod web_addons;
 pub mod web_deps;
 pub use install::{
     addon_corpus, addon_corpus_candidates, candidates, drop_in_install, project_folder,

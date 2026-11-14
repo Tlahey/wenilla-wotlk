@@ -76,10 +76,16 @@ export async function boot(init, opts = {}) {
   // someone consumes it. Instantiation must still wait for the cache warmup because the
   // game's Startup performs synchronous reads of the prefetched catalogs.
   const wasm = compileWasm(new URL('./wenilla_bg.wasm', import.meta.url));
+  // The page's AddOns folder (served + imported into this browser, web/addons-store.js): the
+  // client lists it once, at world entry, so it must stand before the client starts. Optional —
+  // a page without it plays with no folder addons.
+  const addons = import('./addons-store.js')
+    .then((m) => m.installAddonStore())
+    .catch((e) => console.warn('addons:', e));
   let w;
   try {
     // Attach rejection handlers to both operations now, including while prefetch is pending.
-    const [module] = await Promise.all([wasm, prefetch, store]);
+    const [module] = await Promise.all([wasm, prefetch, store, addons]);
     w = await init({ module_or_path: module });
   } catch (e) {
     ui.fail('The client failed to start: ' + (e && e.message ? e.message : e));
