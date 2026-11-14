@@ -110,6 +110,19 @@
       if (!dialog.open) dialog.showModal();
     };
   })();
+  // The Escape menu's Full Screen button (`ui_script/fullscreen.rs`): -1 where the page cannot go
+  // full screen (iPhone Safari), else 1/0, the state before any toggle. The click that reached the
+  // game is the user activation the request needs; platform.js keeps Keyboard Lock in step.
+  window.__wenilla_fullscreen = (toggle) => {
+    const root = document.documentElement;
+    if (!root.requestFullscreen || !document.exitFullscreen || document.fullscreenEnabled === false) return -1;
+    const full = document.fullscreenElement != null;
+    if (toggle) {
+      const done = full ? document.exitFullscreen() : root.requestFullscreen({ navigationUI: 'hide' });
+      Promise.resolve(done).catch((e) => console.warn('fullscreen:', e));
+    }
+    return full ? 1 : 0;
+  };
 </script>
 <script>
   // Dev page: allow `?user=&pass=&char=` links to log in. A hosting page that fetched the

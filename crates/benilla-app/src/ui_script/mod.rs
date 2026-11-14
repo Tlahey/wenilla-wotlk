@@ -15,6 +15,8 @@ use benilla_world::schedule::WorldStage;
 pub(crate) mod addons;
 #[cfg(any(target_arch = "wasm32", test))]
 mod addon_import;
+#[cfg(any(target_arch = "wasm32", test))]
+mod fullscreen;
 mod content;
 #[cfg(target_arch = "wasm32")]
 mod entry_ahead;

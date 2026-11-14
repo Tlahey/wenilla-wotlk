@@ -811,6 +811,10 @@ fn entry_finish(world: &mut World, script: &mut UiScript, inputs: &EntryInputs) 
     if let Err(error) = super::addon_import::install_game_menu_button(script) {
         warn!("ui_script: game menu AddOns button: {error}");
     }
+    #[cfg(target_arch = "wasm32")]
+    if let Err(error) = super::fullscreen::install_game_menu_button(script) {
+        warn!("ui_script: game menu Full Screen button: {error}");
+    }
     // The new Minimap's zoom indices from the persisted CVars, as the reference's minimap reset
     // copies each CVar into its live index; `Minimap:SetZoom` owns them from here.
     let zoom = {

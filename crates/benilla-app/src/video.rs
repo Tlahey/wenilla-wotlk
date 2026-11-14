@@ -139,6 +139,12 @@ pub(crate) fn window_mode(
 /// answer before the window exists (`bevy_winit::select_monitor`); a picked `gxResolution` is set
 /// at the first frame that sees the monitor's modes ([`apply_window_mode`]).
 pub(crate) fn boot_window_mode() -> WindowMode {
+    // In the browser the canvas fills the page, and only the page can go full screen, from a
+    // click (the Escape menu's Full Screen button, `ui_script/fullscreen.rs`) or F11. A winit
+    // fullscreen asks the canvas from no gesture, is refused, and leaves the mode out of step.
+    if cfg!(target_arch = "wasm32") {
+        return WindowMode::Windowed;
+    }
     let flag = |name| crate::cvars::boot_cvar(name).and_then(|v| v.parse::<f32>().ok());
     // A run that sizes its own window owns both rows for the session.
     let (display, maximize) = if windowed_env() {
@@ -1153,6 +1159,10 @@ fn apply_window_mode(
         }
     }
     if !cfg.is_changed() && !forced && !first_monitor {
+        return;
+    }
+    // The page owns full screen and the canvas its size in the browser (`boot_window_mode`).
+    if cfg!(target_arch = "wasm32") {
         return;
     }
     let Ok((entity, mut window)) = windows.single_mut() else {
