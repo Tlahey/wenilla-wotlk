@@ -33,6 +33,14 @@ pub(super) fn install_account_button(script: &UiScript) -> mlua::Result<()> {
     script.run(
         r#"
         if AccountLoginManageAccountButton then
+            if AccountLoginLoginButton then
+                AccountLoginManageAccountButton:ClearAllPoints()
+                AccountLoginManageAccountButton:SetPoint("TOP", AccountLoginLoginButton, "BOTTOM", 0, -4)
+                if AccountLoginSaveAccountNameText then
+                    AccountLoginSaveAccountNameText:ClearAllPoints()
+                    AccountLoginSaveAccountNameText:SetPoint("TOP", AccountLoginManageAccountButton, "BOTTOM", 10, 0)
+                end
+            end
             AccountLoginManageAccountButton:SetText(CREATE_ACCOUNT or "Create Account")
             AccountLoginManageAccountButton:SetScript("OnClick", function()
                 PlaySound("gsLoginNewAccount")
@@ -128,7 +136,9 @@ mod tests {
         script
             .run(
                 r#"CREATE_ACCOUNT = "Créer un compte"
-               CreateFrame("Button", "AccountLoginManageAccountButton")"#,
+               CreateFrame("Button", "AccountLoginLoginButton")
+               CreateFrame("Button", "AccountLoginManageAccountButton")
+               AccountLoginSaveAccountNameText = AccountLoginLoginButton:CreateFontString("AccountLoginSaveAccountNameText")"#,
             )
             .unwrap();
         install_account_button(&script).unwrap();
@@ -138,6 +148,18 @@ mod tests {
                 .unwrap(),
             "Créer un compte"
         );
+        assert!(script
+            .eval::<bool>(
+                r#"local point, relative, relativePoint, x, y = AccountLoginManageAccountButton:GetPoint()
+                   return point == "TOP" and relative == AccountLoginLoginButton and relativePoint == "BOTTOM" and x == 0 and y == -4"#,
+            )
+            .unwrap());
+        assert!(script
+            .eval::<bool>(
+                r#"local point, relative, relativePoint = AccountLoginSaveAccountNameText:GetPoint()
+                   return point == "TOP" and relative == AccountLoginManageAccountButton and relativePoint == "BOTTOM""#,
+            )
+            .unwrap());
         script
             .run("AccountLoginManageAccountButton:Click()")
             .unwrap();
