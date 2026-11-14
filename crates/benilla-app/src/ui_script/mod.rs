@@ -13,6 +13,8 @@ use benilla_world::schedule::WorldStage;
 
 /// The addon folder: discovery, manifests, the enable file and the load walk.
 pub(crate) mod addons;
+#[cfg(any(target_arch = "wasm32", test))]
+mod addon_import;
 mod content;
 #[cfg(target_arch = "wasm32")]
 mod entry_ahead;

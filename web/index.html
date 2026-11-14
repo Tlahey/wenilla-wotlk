@@ -68,6 +68,49 @@
   }
 </script>
 <canvas id="benilla"></canvas>
+<style>
+  #addons-dialog { width: min(94vw, 680px); height: min(90vh, 760px); padding: 0; border: 2px solid #668da4;
+    border-radius: 10px; background: #0b1824; color: #d8e6ee; font-family: "Trebuchet MS", Verdana, sans-serif; }
+  #addons-dialog::backdrop { background: #030910b3; }
+  #addons-dialog[open] { display: flex; flex-direction: column; }
+  #addons-dialog header { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid #22394a; }
+  #addons-dialog header strong { flex: 1; color: #c3e9f8; font-size: 17px; }
+  #addons-dialog button { cursor: pointer; border: 1px solid #82aabb; border-radius: 5px; padding: 6px 12px;
+    background: linear-gradient(#315a70, #18394c); color: #c3e9f8; font-weight: 700; }
+  #addons-dialog iframe { flex: 1; width: 100%; border: 0; background: transparent; }
+</style>
+<dialog id="addons-dialog" aria-label="Add-ons locaux">
+  <header><strong>Add-ons locaux</strong>
+    <button type="button" id="addons-reload">Recharger le jeu</button>
+    <button type="button" id="addons-close">Fermer</button></header>
+</dialog>
+<script>
+  // The add-on importer (web/addons.html) in a dialog over the game, opened from the AddOns list's
+  // "Import" button and the Escape menu's "AddOns" (benilla-app ui_script/addon_import.rs). The
+  // addons it installs count at the next page load, hence "reload".
+  (() => {
+    const dialog = document.getElementById('addons-dialog');
+    if (!dialog || typeof dialog.showModal !== 'function') return;
+    const canvas = document.getElementById('benilla');
+    const close = () => { dialog.close(); };
+    dialog.addEventListener('close', () => {
+      dialog.querySelector('iframe')?.remove();
+      canvas?.focus?.();
+    });
+    document.getElementById('addons-close').addEventListener('click', close);
+    document.getElementById('addons-reload').addEventListener('click', () => location.reload());
+    window.__wenilla_open_addons = () => {
+      if (document.pointerLockElement) document.exitPointerLock?.();
+      if (!dialog.querySelector('iframe')) {
+        const frame = document.createElement('iframe');
+        frame.src = '/addons.html?embedded=1';
+        frame.title = 'Add-ons locaux';
+        dialog.appendChild(frame);
+      }
+      if (!dialog.open) dialog.showModal();
+    };
+  })();
+</script>
 <script>
   // Dev page: allow `?user=&pass=&char=` links to log in. A hosting page that fetched the
   // credentials itself sets `window.__wenilla_env = {user, pass, host}` here instead, and the

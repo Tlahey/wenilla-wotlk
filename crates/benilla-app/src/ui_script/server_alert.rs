@@ -528,6 +528,11 @@ pub(crate) fn open_launched(mut urls: MessageReader<LaunchUrl>) {
             open_in_browser("/accounts/");
             continue;
         }
+        #[cfg(target_arch = "wasm32")]
+        if url == super::addon_import::IMPORT_URL {
+            super::addon_import::open_importer();
+            continue;
+        }
         open_in_browser(url);
     }
 }

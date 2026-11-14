@@ -83,6 +83,10 @@ fn install_glue_vm(world: &mut World, screen: super::glue::GlueScreen) -> bool {
     if let Err(error) = super::glue::install_account_button(&script) {
         warn!("ui_script: account button: {error}");
     }
+    #[cfg(target_arch = "wasm32")]
+    if let Err(error) = super::addon_import::install_glue_import_button(&script) {
+        warn!("ui_script: addon import button: {error}");
+    }
     super::glue::finish_glue_load_log(&mut script);
     start_server_alert(world, &script);
     super::glue_mgr::seat_glue_vm(world, &mut script);
@@ -205,7 +209,7 @@ fn install_addon_asset_resolvers(world: &mut World, script: &mut UiScript) {
             chain.lock_recover().contains(c)
                 || root
                     .as_deref()
-                    .is_some_and(|r| benilla_assets::loose_addon_file(r, c).is_some())
+                    .is_some_and(|r| benilla_assets::loose_addon_exists(r, c))
         })
     }));
     // Keyed by the path exactly as the region carries it, so a hit allocates nothing (this is
@@ -239,7 +243,7 @@ fn install_addon_asset_resolvers(world: &mut World, script: &mut UiScript) {
         }
         let found = font_chain.lock_recover().contains(path)
             || font_root.as_deref().is_some_and(|r| {
-                benilla_assets::loose_addon_file(r, &benilla_assets::normalize_path(path)).is_some()
+                benilla_assets::loose_addon_exists(r, &benilla_assets::normalize_path(path))
             });
         seen.borrow_mut().insert(path.to_string(), found);
         found
@@ -803,6 +807,10 @@ fn entry_prepare(world: &mut World, script: &mut UiScript) -> EntryInputs {
 /// zoom, the saved variables and `VARIABLES_LOADED`, the chat cache.
 fn entry_finish(world: &mut World, script: &mut UiScript, inputs: &EntryInputs) {
     crate::ui_chat::commands::register_dev_commands(script, crate::run_mode::dev_affordances());
+    #[cfg(target_arch = "wasm32")]
+    if let Err(error) = super::addon_import::install_game_menu_button(script) {
+        warn!("ui_script: game menu AddOns button: {error}");
+    }
     // The new Minimap's zoom indices from the persisted CVars, as the reference's minimap reset
     // copies each CVar into its live index; `Minimap:SetZoom` owns them from here.
     let zoom = {

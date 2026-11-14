@@ -273,6 +273,9 @@ const ADDONS_PREFIX: &str = "Interface/AddOns/";
 /// `Wow.exe`'s `Interface\AddOns\`, as the reference reads; `None` under `$WOW_CAPTURE`. Addon
 /// textures and fonts resolve onto it too.
 pub(crate) fn root() -> Option<PathBuf> {
+    // On the page the folder is the page's AddOns store (`web/addons-store.js`).
+    #[cfg(target_arch = "wasm32")]
+    benilla_ui::source::set_web_addon_reader(benilla_formats::web_addons::read);
     crate::local_state::addons_dir()
 }
 
@@ -376,21 +379,29 @@ pub(super) fn discover_folder() -> Vec<Addon> {
     let Some(root) = root() else {
         return Vec::new();
     };
-    let Ok(entries) = std::fs::read_dir(&root) else {
-        return Vec::new(); // no addon folder is the normal case, not an error
+    #[cfg(target_arch = "wasm32")]
+    let mut names = benilla_formats::web_addons::folders();
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut names: Vec<String> = {
+        let Ok(entries) = std::fs::read_dir(&root) else {
+            return Vec::new(); // no addon folder is the normal case, not an error
+        };
+        entries
+            .flatten()
+            .filter(|e| e.path().is_dir())
+            .filter_map(|e| e.file_name().to_str().map(str::to_owned))
+            .collect()
     };
-    let mut names: Vec<String> = entries
-        .flatten()
-        .filter(|e| e.path().is_dir())
-        .filter_map(|e| e.file_name().to_str().map(str::to_owned))
-        .collect();
     sort_by_directory_order(&mut names);
     names
         .into_iter()
         .filter_map(|name| {
-            let dir = root.join(&name);
             // A folder with no `<Name>.toc` is not an addon; the reference skips it silently too.
-            let text = manifest_in(&dir, &name)?;
+            #[cfg(target_arch = "wasm32")]
+            let text = benilla_formats::web_addons::read(&format!("{name}/{name}.toc"))
+                .map(|bytes| benilla_ui::source::decode(&bytes).into_owned())?;
+            #[cfg(not(target_arch = "wasm32"))]
+            let text = manifest_in(&root.join(&name), &name)?;
             Some(Addon {
                 name,
                 toc: Toc::parse(&text),
@@ -404,6 +415,7 @@ pub(super) fn discover_folder() -> Vec<Addon> {
 /// `<dir>/<name>.toc`, matched case-insensitively as on the reference's Windows filesystem
 /// (`MyAddon/myaddon.toc` is an addon there). Decoded, not read as UTF-8: one cp1252 byte in a
 /// `## Notes:` line must not make the addon vanish.
+#[cfg(not(target_arch = "wasm32"))]
 fn manifest_in(dir: &Path, name: &str) -> Option<String> {
     let want = format!("{name}.toc");
     let entry = std::fs::read_dir(dir).ok()?.flatten().find(|e| {
