@@ -18,6 +18,8 @@ mod addon_import;
 mod content;
 #[cfg(target_arch = "wasm32")]
 mod entry_ahead;
+#[cfg(any(target_arch = "wasm32", test))]
+mod error_export;
 pub(crate) mod extract;
 /// The stock glue screens.
 pub(crate) mod glue;

@@ -34,7 +34,7 @@ mkdir -p "${DIST}"
 strip=(--remove-name-section --remove-producers-section)
 [ "${WEB_DEBUG:-0}" = 1 ] && strip=()
 wasm-bindgen --target web --no-typescript ${strip[@]+"${strip[@]}"} --out-dir "${DIST}" "${WASM}"
-cp web/index.html web/wasi_stubs.js web/boot.js web/datastore.js web/networker.js web/platform.js web/bridge.js web/addons-store.js web/addons.html "${DIST}/"
+cp web/index.html web/wasi_stubs.js web/boot.js web/datastore.js web/networker.js web/platform.js web/bridge.js web/addons-store.js web/error-clipboard.js web/addons.html "${DIST}/"
 # The page says which backend it was built for, so boot.js knows whether to require WebGPU.
 sed -i.bak "s#<meta charset=\"utf-8\">#&<meta name=\"wenilla-backend\" content=\"${BACKEND}\">#" "${DIST}/index.html"
 rm -f "${DIST}/index.html.bak"

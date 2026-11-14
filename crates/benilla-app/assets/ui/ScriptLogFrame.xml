@@ -207,6 +207,19 @@
             end
             DEFAULT_CHAT_FRAME:AddMessage("Script log cleared.", 1.0, 1.0, 0.0)
         end
+
+        function BenillaScriptLog_Export()
+            local lines = {
+                "wenilla WotLK 3.3.5a - script error log",
+                format("Locale: %s; retained: %d; issued: %d; limit: %d",
+                    GetLocale(), table.getn(BenillaScriptLog.rows),
+                    BenillaScriptLog.total, BENILLA_SCRIPTLOG_CAP)
+            }
+            for _, row in ipairs(BenillaScriptLog.rows) do
+                table.insert(lines, format("\n#%d x%d\n%s", row.seq, row.count, row.message))
+            end
+            return table.concat(lines, "\n")
+        end
     ]]></Script>
 
     <!-- One list row: the `#N xCount` column, then the message head. -->
@@ -368,6 +381,11 @@
                 <Size><AbsDimension x="80" y="22"/></Size>
                 <Anchors><Anchor point="CENTER" relativePoint="TOPLEFT"><Offset><AbsDimension x="305" y="-420"/></Offset></Anchor></Anchors>
                 <Scripts><OnClick>HideUIPanel(getglobal("BenillaScriptLogFrame"))</OnClick></Scripts>
+            </Button>
+            <Button name="BenillaScriptLogCopyButton" inherits="UIPanelButtonTemplate" hidden="true" text="Copy all">
+                <Size><AbsDimension x="112" y="22"/></Size>
+                <Anchors><Anchor point="CENTER" relativePoint="TOPLEFT"><Offset><AbsDimension x="112" y="-420"/></Offset></Anchor></Anchors>
+                <Scripts><OnClick>WowservCopyScriptErrors(BenillaScriptLog_Export(), GetLocale())</OnClick></Scripts>
             </Button>
         </Frames>
         <Scripts>
