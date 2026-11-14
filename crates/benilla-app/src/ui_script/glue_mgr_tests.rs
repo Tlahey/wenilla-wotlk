@@ -1760,11 +1760,17 @@ fn the_stock_login_loads_the_roster_into_character_select() {
 /// its `SelectCharacter(0)`, which fires it again (`0x4e45fa`). With no realm chosen this session
 /// the load asks for the realm list and fires no `CHARACTER_LIST_UPDATE`, and the list's rebuild
 /// puts the realm wizard up (an account with no characters); with a realm chosen it fires the
-/// update and the screen stays, with no rows.
+/// update and the screen stays, with no rows. A server of one realm counts it as chosen
+/// ([`a_single_realm_server_skips_the_realm_wizard`]), so this one lists two.
 #[test]
 fn an_empty_roster_asks_for_the_realm_list_only_with_no_realm_chosen() {
     let _ = benilla_formats::wow_data_or_skip!();
-    let (mut app, realmd, _) = char_select_app(&[], "0", false);
+    let (mut app, realmd, _) = char_select_app_on(
+        |world| vec![FakeRealm::new("Alpha", world), FakeRealm::new("Bravo", world)],
+        &[&[]],
+        "0",
+        false,
+    );
     until(&mut app, "the realm wizard", |app| {
         shown(app, "RealmWizard")
     });
@@ -2354,4 +2360,22 @@ fn the_create_dials_walk_the_install_grid_by_class() {
     let skins = walk(&dk, 0, grid.sections[0][0].len() * 2);
     assert!(skins.iter().any(|&s| skin_flags(s) & 0x4 != 0), "{skins:?}");
     assert!(skins.iter().all(|&s| skin_flags(s) & 0x8 == 0), "{skins:?}");
+}
+
+/// A server of one realm, a fresh browser (`realmName` empty) and an account with no characters:
+/// the connect dials the only realm and the empty character screen stands, with no realm wizard.
+#[test]
+fn a_single_realm_server_skips_the_realm_wizard() {
+    let _ = benilla_formats::wow_data_or_skip!();
+    let (mut app, _realmd, _) =
+        live_app_with(|world| vec![FakeRealm::new("Alpha", world)], "", &[]);
+    log_in(&mut app);
+    until(&mut app, "the character screen", screen_up);
+    for _ in 0..20 {
+        app.update();
+    }
+    assert!(shown(&app, "CharacterSelect"));
+    assert!(!shown(&app, "RealmWizard") && !shown(&app, "RealmList"));
+    assert_eq!(dialog(&app), None);
+    assert_eq!(vm(&app).errors(), Vec::<String>::new());
 }

@@ -33,7 +33,8 @@
 //!
 //! 1. The connect's first act is a realm list query (after the logon the logon's own list is the
 //!    reply). On the reply a realm already selected this process is dialled; else the `realmName`
-//!    CVar names one, first match by name, case folded; else the connect fails
+//!    CVar names one, first match by name, case folded; else a list of one realm dials that realm
+//!    (a wowserv deviation: a single-realm server has nothing to pick); else the connect fails
 //!    `REALM_LIST_REALM_NOT_FOUND`. A query with no answer fails it `REALM_LIST_FAILED`.
 //! 2. State 2's failure arm, for any status but `AUTH_FAILED`, raises the list over the screen:
 //!    `CLOSE_STATUS_DIALOG`, which takes the failure's `OKAY` back down, then the rebuild, whose
@@ -69,7 +70,8 @@
 //!    with no query pending, is dropped ([`GlueMgr::on_roster`]).
 //! 3. State 3's frame re-texts the dialog and acts on the completed query: success closes the
 //!    dialog and loads the roster (`lastCharacterIndex` selected, `CHARACTER_LIST_UPDATE`); an
-//!    empty roster with no realm chosen asks for the realm list instead and fires no update. A
+//!    empty roster with no realm chosen asks for the realm list instead and fires no update; with a
+//!    list of one realm that realm counts as chosen, so the wizard never stands before it. A
 //!    cancel (the dialog's button) tears the roster down and raises the realm list; another failure
 //!    opens `OKAY`. The roster is torn down on the world connect's failure arm too.
 //!
@@ -1103,7 +1105,8 @@ impl GlueMgr {
             OpKind::GetRealms => self.op.complete(true, STATUS_REALM_LIST_SUCCESS),
             OpKind::Connect => {
                 if self.selected.is_none() {
-                    self.selected = select_by_name(&self.holder, realm_name);
+                    self.selected = select_by_name(&self.holder, realm_name)
+                        .or_else(|| sole_realm(&self.holder));
                 }
                 match &self.selected {
                     Some(r) => {
@@ -1531,6 +1534,14 @@ impl GlueMgr {
 
 /// The realm pick by name: the first realm in the holder whose name matches, case folded, whatever
 /// its flags.
+/// The only realm of a one-realm list.
+fn sole_realm(holder: &[RealmInfo]) -> Option<RealmInfo> {
+    match holder {
+        [only] => Some(only.clone()),
+        _ => None,
+    }
+}
+
 fn select_by_name(holder: &[RealmInfo], name: &str) -> Option<RealmInfo> {
     holder
         .iter()
@@ -2308,6 +2319,15 @@ fn flush_one(
                 .iter()
                 .map(|c| glue_character(c, names))
                 .collect();
+            // A single-realm server: its realm is the choice, so an empty roster loads instead
+            // of putting the realm wizard up.
+            if mgr.holder.len() == 1 {
+                let mut cells = script.glue_realm_cells();
+                if cells.chosen.is_none() {
+                    cells.chosen = Some(0);
+                    script.set_glue_realm_cells(cells);
+                }
+            }
             // `RequestRealmList(1)`, when no realm has been chosen.
             if script.load_glue_roster(roster) {
                 mgr.request_realm_list(true);
