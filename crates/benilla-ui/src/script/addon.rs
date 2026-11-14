@@ -740,7 +740,11 @@ fn run_files(lua: &Lua, name: &str, read: &Reader, files: &[String], toc: &mut S
             continue;
         };
         if lua_file {
-            if let Err(e) = run_chunk(lua, &bytes, &crate::script::addon_chunk_name(name, file)) {
+            if let Err(e) = crate::script::run_file_chunk(
+                lua,
+                crate::source::chunk(&bytes),
+                &crate::script::addon_chunk_name(name, file),
+            ) {
                 log_error(
                     lua,
                     &format!("{name}/{file}: {e}"),

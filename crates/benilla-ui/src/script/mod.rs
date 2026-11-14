@@ -970,6 +970,31 @@ pub fn addon_chunk_name(folder: &str, file: &str) -> String {
     format!("@Interface\\AddOns\\{folder}\\{}", file.replace('/', "\\"))
 }
 
+/// 3.3.5a addon files receive their folder name and a shared private namespace in `...`.
+pub(crate) fn run_file_chunk(lua: &Lua, chunk: &[u8], name: &str) -> mlua::Result<()> {
+    let path = name.trim_start_matches('@').replace('\\', "/");
+    let chunk = lua
+        .load(chunk)
+        .set_name(name)
+        .set_mode(mlua::ChunkMode::Text);
+    let Some((addon, _)) = path
+        .strip_prefix("Interface/AddOns/")
+        .and_then(|path| path.split_once('/'))
+    else {
+        return chunk.exec();
+    };
+    let key = format!("benilla.addon_namespace.{}", addon.to_ascii_lowercase());
+    let namespace = match lua.named_registry_value::<Option<mlua::Table>>(&key)? {
+        Some(table) => table,
+        None => {
+            let table = lua.create_table()?;
+            lua.set_named_registry_value(&key, table.clone())?;
+            table
+        }
+    };
+    chunk.call::<()>((addon, namespace))
+}
+
 /// What both FrameScript states hold: FrameScript's Lua init (the base libraries, `bit` and the
 /// client's base-library helpers) and the registrars the glue manager's resume (`0x4da5f0`)
 /// shares with the in-game UI's init: the system table `0xad2184` (the clock and `ConsoleExec`),
@@ -1424,11 +1449,7 @@ impl UiScript {
 
     /// Run a chunk under the name the 1.12 client gives it ([`addon_chunk_name`] for addon files).
     pub fn run_chunk_named(&self, chunk: &[u8], name: &str) -> mlua::Result<()> {
-        self.lua
-            .load(crate::source::chunk(chunk))
-            .set_name(name)
-            .set_mode(mlua::ChunkMode::Text)
-            .exec()
+        run_file_chunk(&self.lua, crate::source::chunk(chunk), name)
     }
 
     /// Load and evaluate a Lua chunk, returning its result: for tests and one-shot queries.
