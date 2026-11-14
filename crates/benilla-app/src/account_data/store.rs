@@ -168,7 +168,7 @@ pub(crate) struct AccountData {
 
 /// The MD5 of a file's bytes; a missing or empty file is all zero (`0x6b8ca0`).
 fn md5_of(path: Option<&Path>) -> [u8; 16] {
-    match path.and_then(|p| std::fs::read(p).ok()) {
+    match path.and_then(|p| crate::local_state::read(p).ok()) {
         Some(bytes) if !bytes.is_empty() => Md5::digest(&bytes).into(),
         _ => [0; 16],
     }
@@ -222,9 +222,7 @@ impl AccountData {
             };
             if let (Some(cache), Some(old)) = (self.cache_file(slot), SLOTS[slot].old) {
                 let old = cache.with_file_name(old);
-                if !old.exists() && cache.exists() {
-                    let _ = std::fs::copy(&cache, &old);
-                }
+                let _ = crate::local_state::copy_if_absent(&cache, &old);
             }
         }
     }
@@ -248,7 +246,7 @@ impl AccountData {
         };
         let Some(bytes) = dir
             .as_ref()
-            .and_then(|d| std::fs::read(d.join(CHECKSUMS)).ok())
+            .and_then(|d| crate::local_state::read(&d.join(CHECKSUMS)).ok())
         else {
             return Vec::new();
         };
@@ -316,7 +314,7 @@ impl AccountData {
         }
         Some(
             self.file(slot)
-                .and_then(|p| std::fs::read(p).ok())
+                .and_then(|p| crate::local_state::read(&p).ok())
                 .unwrap_or_default(),
         )
     }
@@ -407,7 +405,7 @@ impl AccountData {
     fn upload(&mut self, slot: usize) {
         let bytes = self
             .cache_file(slot)
-            .and_then(|p| std::fs::read(p).ok())
+            .and_then(|p| crate::local_state::read(&p).ok())
             .unwrap_or_default();
         let time = self.clock;
         self.clock = self.clock.wrapping_add(1);
@@ -553,6 +551,55 @@ mod tests {
             [Wire::Upload { time: 5001, .. }]
         ));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn camera_settings_and_local_layout_survive_reconnection() {
+        let account = tmp("reconnect-account");
+        let character = tmp("reconnect-character");
+        let config = b"SET cameraDistanceMax \"50\"\r\nSET cameraDistanceMaxFactor \"2\"\r\n";
+        let layout = b"Frame: ProbeFrame\r\nFrameLevel: 1\r\n";
+        let mut data = AccountData::default();
+        data.initialize(true, Some(account.clone()));
+        data.initialize(false, Some(character.clone()));
+        let server = times(
+            5000,
+            0xff,
+            &[(0, 0), (1, 0), (2, 0), (3, 0), (4, 0), (5, 0), (7, 0)],
+        );
+        data.on_times(&server, &always);
+        assert!(data.save(CONFIG_ACCOUNT, config, &always));
+        assert!(data.save(LAYOUT, layout, &always));
+        data.flush();
+        assert_eq!(
+            data.take_outbox(),
+            [Wire::Upload {
+                slot: 0,
+                time: 5000,
+                bytes: config.to_vec(),
+            }]
+        );
+        data.release_character();
+
+        let mut fresh = AccountData::default();
+        fresh.initialize(true, Some(account.clone()));
+        fresh.initialize(false, Some(character.clone()));
+        fresh.on_times(
+            &times(
+                5001,
+                0xff,
+                &[(0, 5000), (1, 0), (2, 0), (3, 0), (4, 0), (5, 0), (7, 0)],
+            ),
+            &always,
+        );
+        assert!(
+            !fresh.has_outbox(),
+            "matching checksums must not upload or erase saved settings"
+        );
+        assert_eq!(fresh.read(CONFIG_ACCOUNT).unwrap(), config);
+        assert_eq!(fresh.read(LAYOUT).unwrap(), layout);
+        let _ = std::fs::remove_dir_all(&account);
+        let _ = std::fs::remove_dir_all(&character);
     }
 
     #[test]

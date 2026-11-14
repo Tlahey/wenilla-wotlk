@@ -335,10 +335,10 @@ pub(crate) fn write_atomic(path: &Path, contents: &str) -> std::io::Result<()> {
 }
 
 /// [`write_atomic`] for bytes: the saved-variables files carry Lua byte strings as they are.
-/// On the page the store holds text, so bytes that are not UTF-8 are stored lossily there.
+/// On the page binary files are encoded losslessly in the text store.
 pub(crate) fn write_atomic_bytes(path: &Path, contents: &[u8]) -> std::io::Result<()> {
     #[cfg(target_arch = "wasm32")]
-    return web_store::set(path, &String::from_utf8_lossy(contents));
+    return web_store::set(path, &encode_web_bytes(contents));
     #[cfg(not(target_arch = "wasm32"))]
     write_atomic_fs(path, contents)
 }
@@ -372,6 +372,9 @@ pub(crate) fn write_saved_file(path: &Path, contents: &[u8]) -> std::io::Result<
     let mut bak = path.as_os_str().to_owned();
     bak.push(".bak");
     let bak = PathBuf::from(bak);
+    #[cfg(target_arch = "wasm32")]
+    let _ = copy_if_absent(path, &bak);
+    #[cfg(not(target_arch = "wasm32"))]
     if path.exists() && !bak.exists() {
         let _ = std::fs::rename(path, &bak);
     }
@@ -380,12 +383,58 @@ pub(crate) fn write_saved_file(path: &Path, contents: &[u8]) -> std::io::Result<
 
 /// Read a state file — the read twin of [`write_atomic_bytes`], so that the page's store answers
 /// too. Absent is `ErrorKind::NotFound` on both targets. On the page the store holds text, so the
-/// bytes are its UTF-8.
+/// bytes are decoded losslessly, including binary checksum files.
 pub(crate) fn read(path: &Path) -> std::io::Result<Vec<u8>> {
     #[cfg(target_arch = "wasm32")]
-    return web_store::get(path).map(String::into_bytes);
+    return web_store::get(path).and_then(decode_web_bytes);
     #[cfg(not(target_arch = "wasm32"))]
     std::fs::read(path)
+}
+
+/// Copy a state file's first version without replacing an existing backup, on either target.
+pub(crate) fn copy_if_absent(path: &Path, backup: &Path) -> std::io::Result<()> {
+    match read(backup) {
+        Ok(_) => return Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
+    }
+    match read(path) {
+        Ok(bytes) => write_atomic_bytes(backup, &bytes),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
+// Keep existing text entries readable; binary cache.md5 and Lua byte strings need a tagged
+// byte-to-character encoding because replacing invalid UTF-8 changes their checksums.
+#[cfg(any(target_arch = "wasm32", test))]
+const WEB_BYTES_TAG: &str = "\0benilla-bytes:";
+
+#[cfg(any(target_arch = "wasm32", test))]
+fn encode_web_bytes(bytes: &[u8]) -> String {
+    match std::str::from_utf8(bytes) {
+        Ok(text) if !text.starts_with(WEB_BYTES_TAG) => text.to_owned(),
+        _ => {
+            let mut text = String::from(WEB_BYTES_TAG);
+            text.extend(bytes.iter().copied().map(char::from));
+            text
+        }
+    }
+}
+
+#[cfg(any(target_arch = "wasm32", test))]
+fn decode_web_bytes(text: String) -> std::io::Result<Vec<u8>> {
+    match text.strip_prefix(WEB_BYTES_TAG) {
+        Some(bytes) => bytes
+            .chars()
+            .map(|c| {
+                u8::try_from(u32::from(c)).map_err(|_| {
+                    std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid stored byte")
+                })
+            })
+            .collect(),
+        None => Ok(text.into_bytes()),
+    }
 }
 
 /// The page's state folder: `window.localStorage`, one entry per file, keyed by the file's own
@@ -460,6 +509,21 @@ pub(crate) mod test_env {
 mod tests {
     use super::test_env::{EnvGuard, ENV_LOCK};
     use super::*;
+
+    #[test]
+    fn browser_state_preserves_binary_bytes_and_existing_text_entries() {
+        let binary: Vec<u8> = (0..=255).collect();
+        assert_eq!(decode_web_bytes(encode_web_bytes(&binary)).unwrap(), binary);
+        let text = "SET cameraDistanceMaxFactor \"2.0\"\r\n-- français";
+        assert_eq!(encode_web_bytes(text.as_bytes()), text);
+        assert_eq!(decode_web_bytes(text.to_owned()).unwrap(), text.as_bytes());
+        let tagged = format!("{WEB_BYTES_TAG}original text");
+        assert_eq!(
+            decode_web_bytes(encode_web_bytes(tagged.as_bytes())).unwrap(),
+            tagged.as_bytes()
+        );
+        assert!(decode_web_bytes(format!("{WEB_BYTES_TAG}\u{100}")).is_err());
+    }
 
     /// Every per-character file keys on this token; ASCII names map unchanged.
     #[test]
