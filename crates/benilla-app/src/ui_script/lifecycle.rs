@@ -79,6 +79,10 @@ fn install_glue_vm(world: &mut World, screen: super::glue::GlueScreen) -> bool {
     }
     let start = bevy::platform::time::Instant::now();
     let failures = super::glue::load_glue(&mut script);
+    #[cfg(target_arch = "wasm32")]
+    if let Err(error) = super::glue::install_account_button(&script) {
+        warn!("ui_script: account button: {error}");
+    }
     super::glue::finish_glue_load_log(&mut script);
     start_server_alert(world, &script);
     super::glue_mgr::seat_glue_vm(world, &mut script);

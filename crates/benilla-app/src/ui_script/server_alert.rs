@@ -523,6 +523,11 @@ pub(crate) fn open_launched(mut urls: MessageReader<LaunchUrl>) {
             debug!("LaunchURL: {url} not opened in this run");
             continue;
         }
+        #[cfg(target_arch = "wasm32")]
+        if url == "http://www.worldofwarcraft.com/wowserv/create-account" {
+            open_in_browser("/accounts/");
+            continue;
+        }
         open_in_browser(url);
     }
 }

@@ -28,6 +28,21 @@ use benilla_ui::script::{ScriptValue, UiScript};
 
 use super::reference_ui;
 
+#[cfg(any(target_arch = "wasm32", test))]
+pub(super) fn install_account_button(script: &UiScript) -> mlua::Result<()> {
+    script.run(
+        r#"
+        if AccountLoginManageAccountButton then
+            AccountLoginManageAccountButton:SetText(CREATE_ACCOUNT or "Create Account")
+            AccountLoginManageAccountButton:SetScript("OnClick", function()
+                PlaySound("gsLoginNewAccount")
+                LaunchURL("http://www.worldofwarcraft.com/wowserv/create-account")
+            end)
+        end
+        "#,
+    )
+}
+
 /// The glue screen `SET_GLUE_SCREEN` names, `GlueParent.lua`'s `GlueScreenInfo` key.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum GlueScreen {
@@ -106,6 +121,32 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::*;
+
+    #[test]
+    fn account_button_uses_the_localized_label_and_requests_registration() {
+        let mut script = UiScript::new_glue().unwrap();
+        script
+            .run(
+                r#"CREATE_ACCOUNT = "Créer un compte"
+               CreateFrame("Button", "AccountLoginManageAccountButton")"#,
+            )
+            .unwrap();
+        install_account_button(&script).unwrap();
+        assert_eq!(
+            script
+                .eval::<String>("return AccountLoginManageAccountButton:GetText()")
+                .unwrap(),
+            "Créer un compte"
+        );
+        script
+            .run("AccountLoginManageAccountButton:Click()")
+            .unwrap();
+        assert!(script.take_glue_requests().iter().any(|request| matches!(
+            request,
+            benilla_ui::script::GlueRequest::LaunchUrl(url)
+                if url == "http://www.worldofwarcraft.com/wowserv/create-account"
+        )));
+    }
 
     /// The glue functions the stock GlueXML calls that benilla has not built yet: each one's call
     /// raises "attempt to call global `X' (a nil value)", at the load or on the login screen. The
