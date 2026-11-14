@@ -808,6 +808,10 @@ fn entry_prepare(world: &mut World, script: &mut UiScript) -> EntryInputs {
 fn entry_finish(world: &mut World, script: &mut UiScript, inputs: &EntryInputs) {
     crate::ui_chat::commands::register_dev_commands(script, crate::run_mode::dev_affordances());
     #[cfg(target_arch = "wasm32")]
+    if let Err(error) = super::addon_import::install_game_addons_import_button(script) {
+        warn!("ui_script: game AddOns import button: {error}");
+    }
+    #[cfg(target_arch = "wasm32")]
     if let Err(error) = super::addon_import::install_game_menu_button(script) {
         warn!("ui_script: game menu AddOns button: {error}");
     }

@@ -1,7 +1,8 @@
-//! The browser's add-on importer, reached from the game: an "Import" button on the character
-//! screen's AddOns list (glue) and an "AddOns" button in the Escape menu (in game). Both open the
-//! page's importer (`/addons.html?embedded=1` in a dialog, `web/index.html`), which keeps the
-//! player's addons in this browser only. An imported addon loads at the next page load.
+//! The browser's add-on importer, reached from an "Import" button on the character screen's
+//! AddOns list (glue) and the in-game AddOns panel. The Escape menu opens the native AddOns panel;
+//! its import button opens the page's importer (`/addons.html?embedded=1` in a dialog,
+//! `web/index.html`), which keeps the player's addons in this browser only. An imported addon
+//! loads at the next page load.
 
 use benilla_ui::script::UiScript;
 
@@ -11,6 +12,7 @@ pub(crate) const IMPORT_URL: &str = "http://www.worldofwarcraft.com/wowserv/addo
 
 /// The in-game global the Escape menu's button calls: the in-game state has no `LaunchURL`.
 const OPEN_GLOBAL: &str = "WowservOpenAddOns";
+const OPEN_IMPORTER_GLOBAL: &str = "WowservOpenAddOnImporter";
 
 /// Add "Import" beside the AddOns list's Enable/Disable All buttons.
 #[cfg(any(target_arch = "wasm32", test))]
@@ -41,14 +43,14 @@ pub(super) fn install_glue_import_button(script: &UiScript) -> mlua::Result<()> 
     ))
 }
 
-/// Add "AddOns" to the Escape menu, between Macros and Logout, and seat [`OPEN_GLOBAL`].
+/// Put the local importer button at the top of the in-game AddOns panel.
 #[cfg(any(target_arch = "wasm32", test))]
-pub(super) fn install_game_menu_button(script: &UiScript) -> mlua::Result<()> {
+pub(super) fn install_game_addons_import_button(script: &UiScript) -> mlua::Result<()> {
     #[cfg(target_arch = "wasm32")]
     {
         let lua = script.lua();
         lua.globals().set(
-            OPEN_GLOBAL,
+            OPEN_IMPORTER_GLOBAL,
             lua.create_function(|_, _: mlua::MultiValue| {
                 open_importer();
                 Ok(())
@@ -57,6 +59,36 @@ pub(super) fn install_game_menu_button(script: &UiScript) -> mlua::Result<()> {
     }
     script.run(&format!(
         r#"
+        if InterfaceOptionsFrameAddOns and not InterfaceOptionsFrameAddOnsImportButton then
+            local panel = InterfaceOptionsFrameAddOns
+            local ok, b = pcall(CreateFrame, "Button", "InterfaceOptionsFrameAddOnsImportButton", panel, "OptionsButtonTemplate")
+            if not ok or not b then
+                b = CreateFrame("Button", "InterfaceOptionsFrameAddOnsImportButton", panel)
+                b:SetWidth(160)
+                b:SetHeight(22)
+            end
+            local fr = GetLocale and GetLocale() == "frFR"
+            b:SetText(fr and "Ajouter un addon" or "Add local add-on")
+            b:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -16, -12)
+            b:SetScript("OnClick", function()
+                if {OPEN_IMPORTER_GLOBAL} then {OPEN_IMPORTER_GLOBAL}() end
+            end)
+        end
+        "#
+    ))
+}
+
+/// Add "AddOns" to the Escape menu, between Macros and Logout, and seat [`OPEN_GLOBAL`].
+#[cfg(any(target_arch = "wasm32", test))]
+pub(super) fn install_game_menu_button(script: &UiScript) -> mlua::Result<()> {
+    script.run(&format!(
+        r#"
+        {OPEN_GLOBAL} = function()
+            if InterfaceOptionsFrame and InterfaceOptionsFrameAddOns then
+                ShowUIPanel(InterfaceOptionsFrame)
+                InterfaceOptionsFrame_OpenToCategory(InterfaceOptionsFrameAddOns)
+            end
+        end
         if GameMenuFrame and GameMenuButtonLogout and not GameMenuButtonAddOns then
             local ok, b = pcall(CreateFrame, "Button", "GameMenuButtonAddOns", GameMenuFrame, "GameMenuButtonTemplate")
             if not ok or not b then
@@ -141,8 +173,11 @@ mod tests {
                    CreateFrame("Button", "GameMenuButtonMacros", GameMenuFrame)
                    CreateFrame("Button", "GameMenuButtonLogout", GameMenuFrame)
                    GameMenuButtonLogout:SetPoint("TOP", GameMenuButtonMacros, "BOTTOM", 0, -16)
-                   opened = 0
-                   WowservOpenAddOns = function() opened = opened + 1 end"#,
+                   InterfaceOptionsFrame = CreateFrame("Frame", "InterfaceOptionsFrame")
+                   InterfaceOptionsFrameAddOns = CreateFrame("Frame", "InterfaceOptionsFrameAddOns")
+                   selected = nil
+                   InterfaceOptionsFrame_OpenToCategory = function(panel) selected = panel end
+                   ShowUIPanel = function(panel) panel:Show() end"#,
             )
             .unwrap();
         install_game_menu_button(&script).unwrap();
@@ -156,6 +191,37 @@ mod tests {
             )
             .unwrap());
         script.run("GameMenuButtonAddOns:Click()").unwrap();
+        assert!(
+            script
+                .eval::<bool>(
+                    "return InterfaceOptionsFrame:IsShown() == 1 and selected == InterfaceOptionsFrameAddOns"
+                )
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn the_game_addons_panel_has_an_import_button_at_the_top() {
+        let script = UiScript::new().unwrap();
+        script
+            .run(
+                r#"InterfaceOptionsFrameAddOns = CreateFrame("Frame", "InterfaceOptionsFrameAddOns")
+                   opened = 0
+                   WowservOpenAddOnImporter = function() opened = opened + 1 end"#,
+            )
+            .unwrap();
+        install_game_addons_import_button(&script).unwrap();
+        assert!(
+            script
+                .eval::<bool>(
+                    r#"local point, relative = InterfaceOptionsFrameAddOnsImportButton:GetPoint()
+                   return point == "TOPRIGHT" and relative == InterfaceOptionsFrameAddOns"#,
+                )
+                .unwrap()
+        );
+        script
+            .run("InterfaceOptionsFrameAddOnsImportButton:Click()")
+            .unwrap();
         assert_eq!(script.eval::<i64>("return opened").unwrap(), 1);
     }
 }
