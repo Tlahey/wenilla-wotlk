@@ -21,6 +21,49 @@ pub(crate) fn rotation_corners(angle: f32, cx: f32, cy: f32) -> TexCoords {
 
 /// Install the paint methods into `m`.
 pub(super) fn install(lua: &Lua, m: &Table) -> mlua::Result<()> {
+    // Texture wrap setters and 1/nil getters in the reference's t008 method table.
+    for (axis, setter, getter) in [
+        (0, "SetHorizTile", "GetHorizTile"),
+        (1, "SetVertTile", "GetVertTile"),
+    ] {
+        m.set(
+            setter,
+            lua.create_function(move |lua, (this, value): (Table, Value)| {
+                let rh = region_handle_of(lua, &this)?;
+                let enabled = !matches!(value, Value::Nil | Value::Boolean(false));
+                let mut model = crate::script::model_mut_of(lua);
+                if model
+                    .region_data
+                    .get(&rh)
+                    .is_some_and(|d| d.texture_tile[axis] == Some(enabled))
+                {
+                    return Ok(());
+                }
+                let target = crate::order::ZTarget::Region(rh);
+                model
+                    .paint_mut(&[target])
+                    .region_data
+                    .entry(rh)
+                    .or_default()
+                    .texture_tile[axis] = Some(enabled);
+                Ok(())
+            })?,
+        )?;
+        m.set(
+            getter,
+            lua.create_function(move |lua, this: Table| {
+                let rh = region_handle_of(lua, &this)?;
+                let model = crate::script::model_mut_of(lua);
+                Ok(crate::script::binding_abi::flag(
+                    model
+                        .region_data
+                        .get(&rh)
+                        .is_some_and(|d| d.texture_tile[axis] == Some(true)),
+                ))
+            })?,
+        )?;
+    }
+
     // SetAlpha/GetAlpha: the region's own alpha, not the owner frame's; stock
     // `CastingBarFrame.lua:133` reads it back to ramp its flash. `RegionData::alpha` has the draw.
     m.set(

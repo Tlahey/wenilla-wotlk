@@ -457,6 +457,7 @@ fn extract_one(
                     // reference's is a texel block it would grey. No stock caller
                     // desaturates a solid.
                     desaturated: data.desaturated && has_path,
+                    tile: data.texture_tile,
                 }
             };
             // A region draws at its owner's scale: only frames carry one.

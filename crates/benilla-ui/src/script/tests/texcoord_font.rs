@@ -4,6 +4,41 @@ use super::common::script;
 use crate::script::*;
 
 #[test]
+fn explicit_texture_tiling_changes_the_extracted_sampling_axes() {
+    let mut s = script();
+    s.run(
+        r#"local frame = CreateFrame("StatusBar", "TileBar")
+           frame:SetSize(100, 20)
+           frame:SetPoint("CENTER")
+           frame:SetStatusBarTexture("tile-test")
+           t = frame:GetStatusBarTexture()
+           assert(t:GetHorizTile() == nil and t:GetVertTile() == nil)
+           t:SetHorizTile(false)
+           t:SetVertTile(true)
+           assert(t:GetHorizTile() == nil and t:GetVertTile() == 1)
+           assert(frame.SetHorizTile == nil)"#,
+    )
+    .unwrap();
+    s.resolve();
+    assert!(s.extract().iter().any(|q| matches!(
+        q.content,
+        QuadContent::Texture {
+            tile: [Some(false), Some(true)],
+            ..
+        }
+    )));
+    s.run("t:SetVertTile(false)").unwrap();
+    s.resolve();
+    assert!(s.extract().iter().any(|q| matches!(
+        q.content,
+        QuadContent::Texture {
+            tile: [Some(false), Some(false)],
+            ..
+        }
+    )));
+}
+
+#[test]
 fn set_tex_coord_changes_extracted_uv() {
     let mut s = script();
     s.set_screen_size(800.0, 600.0);

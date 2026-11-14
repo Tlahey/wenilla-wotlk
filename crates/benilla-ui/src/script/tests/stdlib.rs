@@ -3,6 +3,25 @@
 
 use super::common::script;
 
+#[test]
+fn native_binding_errors_reach_xpcall_handlers_as_strings() {
+    let s = script();
+    s.run(
+        r#"local ok, message = xpcall(function() UnitIsGhost(nil) end, function(message)
+               assert(type(message) == "string")
+               return "reported: " .. message
+           end)
+           assert(not ok)
+           assert(message == 'reported: Usage: UnitIsGhost("unit")')
+           local marker = {}
+           local _, value = xpcall(function() error(marker) end, function(message) return message end)
+           assert(value == marker)
+           local ok, a, b, c = xpcall(function() return 1, nil, 3 end, function() end)
+           assert(ok and a == 1 and b == nil and c == 3)"#,
+    )
+    .unwrap();
+}
+
 // ── The positional format wrapper ──
 
 #[test]

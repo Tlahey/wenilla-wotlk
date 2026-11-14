@@ -90,12 +90,32 @@ pub(super) fn sandbox(lua: &Lua) -> mlua::Result<()> {
     )?;
     g.set("loadstring", loadstring)?;
 
+    let original_xpcall = g.get::<mlua::Function>("xpcall")?;
+    // Native binding failures must reach Lua handlers as strings, not mlua error userdata.
+    let normalize = lua.create_function(|lua, value: Value| match value {
+        Value::Error(error) => Ok(Value::String(lua.create_string(lua_message(&error))?)),
+        other => Ok(other),
+    })?;
+    let xpcall: mlua::Function = lua
+        .load(
+            "local original, normalize = ...
+             local type = type
+             return function(f, handler)
+                 if type(handler) ~= 'function' then return original(f, handler) end
+                 return original(f, function(message) return handler(normalize(message)) end)
+             end",
+        )
+        .set_name("=binding_error")
+        .call((original_xpcall.clone(), normalize))?;
+    g.set("xpcall", xpcall)?;
+
     // Captured before any interface file runs, so an addon's own `xpcall` never stands in. 5.1's
     // `xpcall` passes no arguments, so a call with some closes over them.
     let handler = lua.create_function(error_with_traceback)?;
     let pcall: mlua::Function = lua
         .load(
-            "local xpcall, select, unpack, handler = xpcall, select, unpack, ...
+            "local xpcall, handler = ...
+             local select, unpack = select, unpack
              return function(f, ...)
                  local n = select('#', ...)
                  if n == 0 then return xpcall(f, handler) end
@@ -104,14 +124,14 @@ pub(super) fn sandbox(lua: &Lua) -> mlua::Result<()> {
              end",
         )
         .set_name(PCALL_CHUNK)
-        .call(handler.clone())?;
+        .call((original_xpcall.clone(), handler.clone()))?;
     lua.set_named_registry_value(REG_HANDLER_PCALL, pcall)?;
     // The `OnUpdate` sweep's whole fire in one call: `this` set and `this`/`event` restored, the
     // handler run under the same message handler through a reused thunk, so a frame's update
     // allocates nothing. The thunk's upvalues are saved around the call, so a nested fire holds.
     let update: mlua::Function = lua
         .load(
-            "local xpcall, handler = xpcall, ...
+            "local xpcall, handler = ...
              local cf, cs, ce
              local function thunk() return cf(cs, ce) end
              return function(f, self, elapsed)
@@ -126,7 +146,7 @@ pub(super) fn sandbox(lua: &Lua) -> mlua::Result<()> {
              end",
         )
         .set_name(PCALL_CHUNK)
-        .call(handler)?;
+        .call((original_xpcall, handler))?;
     lua.set_named_registry_value(REG_UPDATE_FIRE, update)?;
 
     Ok(())

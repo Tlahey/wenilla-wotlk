@@ -795,6 +795,7 @@ pub(super) fn load_third_party(
         crate::local_state::addon_saved_account_dir(),
         identity.and_then(|(r, c)| crate::local_state::addon_saved_character_dir(r, c)),
     );
+    script.set_addon_saved_reader(Box::new(crate::local_state::read));
     // The verbs write through the character's own hash, so logout saves only what they changed.
     script.set_addon_enable_hash(
         character

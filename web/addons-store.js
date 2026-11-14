@@ -4,7 +4,7 @@
 // `window.__wenilla_addons` (benilla-formats `web_addons`), synchronously. Two sources:
 //
 //   - the addons the host serves read-only (`wenilla-host --addons`): `GET /addons/__catalog`
-//     lists their files, and each file is read on first use from `/addons/<path>`;
+//     lists their files; source is prefetched as binary, other assets read on first use;
 //   - the addons the player imported into this browser (`addons.html`), kept in IndexedDB and
 //     never uploaded. A local folder replaces a served one of the same name, whole.
 //
@@ -73,6 +73,14 @@ function fetchServed(path) {
   return bytes;
 }
 
+export async function fetchServedSource(path) {
+  const response = await fetch('/addons/' + path.split('/').map(encodeURIComponent).join('/'), {
+    cache: 'no-store', credentials: 'same-origin',
+  });
+  if (!response.ok) throw new Error(`addons: ${path}: HTTP ${response.status}`);
+  return new Uint8Array(await response.arrayBuffer());
+}
+
 export async function installAddonStore() {
   const [local, served] = await Promise.all([
     localFiles().catch((e) => { console.warn('addons: local store unavailable:', e); return []; }),
@@ -89,6 +97,22 @@ export async function installAddonStore() {
     entries.set(addonKey(file.path), { path: file.path, bytes: new Uint8Array(file.bytes), local: true });
   }
 
+  // A UTF-8/UTF-16 BOM overrides XHR's x-user-defined charset. Read source as binary before
+  // the synchronous Lua loader starts, rather than truncating decoded Unicode to bytes.
+  const sources = [...entries.values()].filter((entry) => !entry.local && /\.(lua|xml|toc)$/i.test(entry.path));
+  const queue = sources.values();
+  await Promise.all(Array.from({ length: 8 }, async () => {
+    for (const entry of queue) {
+      entry.source = true;
+      try {
+        entry.bytes = await fetchServedSource(entry.path);
+      } catch (error) {
+        entry.bytes = null;
+        console.warn(error);
+      }
+    }
+  }));
+
   const folders = [];
   for (const [key, entry] of entries) {
     const parts = key.split('/');
@@ -101,7 +125,7 @@ export async function installAddonStore() {
     read: (rel) => {
       const entry = entries.get(addonKey(rel));
       if (!entry) return null;
-      if (!entry.bytes) entry.bytes = fetchServed(entry.path);
+      if (!entry.bytes && !entry.source) entry.bytes = fetchServed(entry.path);
       return entry.bytes;
     },
   };

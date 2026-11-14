@@ -1491,6 +1491,7 @@ fn convert_entry(
             portrait_unit,
             rotation,
             desaturated,
+            tile,
         } => {
             // A live unit portrait (`SetPortraitTexture(region, unit)`): the model bake, or the
             // reference's 2D TemporaryPortrait while the model streams; no entry yet draws nothing.
@@ -1557,7 +1558,8 @@ fn convert_entry(
                 None => UvRect::FULL,
             };
             // A slice past the texture tiles (`BonusActionBarFrame.lua:173`), on that axis alone.
-            let wrap = tiling_axes(&uv);
+            let inferred = tiling_axes(&uv);
+            let wrap = (tile[0].unwrap_or(inferred.0), tile[1].unwrap_or(inferred.1));
             let handle = match (path.as_deref(), assets.as_mut()) {
                 (Some(p), Some(a)) => {
                     // Still on its way: the cell stays empty until it lands.

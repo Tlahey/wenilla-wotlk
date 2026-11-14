@@ -125,6 +125,8 @@ pub enum QuadContent {
         /// `SetDesaturated`: the texel draws as its luminance, then is tinted by `color`, since
         /// `SetItemButtonDesaturated` passes a dim tint with the flag.
         desaturated: bool,
+        /// Explicit Texture wrap flags; unset axes retain the existing UV-based inference.
+        tile: [Option<bool>; 2],
     },
     /// A `ColorSelect`'s `<ColorWheelTexture>` disc, generated: the pixel at normalised offset
     /// `(nx, ny)` from the centre is `HSV(atan2(ny, nx)·180/π + 180, min(|n|, 1), 1)`, inverting
@@ -407,6 +409,7 @@ pub(crate) struct RegionData {
     pub(crate) justify: crate::justify::Justify,
     /// The `<TexCoords>`/`SetTexCoord` mapping; `None` is the full texture.
     pub(crate) tex_coords: Option<TexCoords>,
+    pub(crate) texture_tile: [Option<bool>; 2],
     /// `SetTexCoordModifiesRect`, the reference's `+0x124`. Stored, not applied: there a set flag
     /// makes `SetTexCoord` re-derive the rect from the UV quad; no stock or corpus code sets it.
     pub(crate) tex_coord_modifies_rect: bool,

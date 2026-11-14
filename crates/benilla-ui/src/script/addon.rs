@@ -16,6 +16,12 @@ use crate::status::Status;
 /// Reads a chain-sourced addon's file by its path inside the patch chain.
 pub type AddonChainReader = Box<dyn Fn(&str) -> Option<Vec<u8>>>;
 
+/// The host's saved-file store; an absent file returns `ErrorKind::NotFound`.
+pub type AddonSavedReader = Box<dyn Fn(&std::path::Path) -> std::io::Result<Vec<u8>>>;
+
+pub(crate) type SharedSavedReader =
+    std::rc::Rc<dyn Fn(&std::path::Path) -> std::io::Result<Vec<u8>>>;
+
 /// [`AddonChainReader`], shared so a load can call it without holding the model.
 pub(crate) type SharedChainReader = std::rc::Rc<dyn Fn(&str) -> Option<Vec<u8>>>;
 
@@ -55,6 +61,55 @@ pub struct AddOnInfo {
     /// The files live in the patch chain, not the AddOns folder: Blizzard's twelve LoadOnDemand
     /// addons, read at `Interface/AddOns/<Name>/<file>` and loaded as a player's addon is.
     pub chain: bool,
+}
+
+#[cfg(test)]
+mod saved_store_tests {
+    use super::*;
+
+    #[test]
+    fn addon_saved_variables_use_the_host_store_and_hold_broken_files() {
+        let mut script = super::super::UiScript::new().unwrap();
+        script.register_addons(
+            vec![AddOnInfo {
+                name: "Probe".into(),
+                interface: 30300,
+                enabled: true,
+                saved_variables: vec!["ACCOUNT".into()],
+                saved_variables_per_character: vec!["CHARACTER".into()],
+                ..Default::default()
+            }],
+            None,
+            Some("/account".into()),
+            Some("/character".into()),
+        );
+        script.set_addon_saved_reader(Box::new(|path| {
+            Ok(if path.starts_with("/account") {
+                b"ACCOUNT = 7".to_vec()
+            } else {
+                b"CHARACTER = 'restored'".to_vec()
+            })
+        }));
+        script.load_addon_saved_variables("Probe");
+        assert_eq!(script.eval::<i64>("return ACCOUNT").unwrap(), 7);
+        assert_eq!(
+            script.eval::<String>("return CHARACTER").unwrap(),
+            "restored"
+        );
+        assert!(script.errors().is_empty(), "{:?}", script.errors());
+
+        script.set_addon_saved_reader(Box::new(|path| {
+            if path.starts_with("/account") {
+                Ok(b"ACCOUNT = = broken".to_vec())
+            } else {
+                Err(std::io::ErrorKind::NotFound.into())
+            }
+        }));
+        script.load_addon_saved_variables("Probe");
+        assert!(script.saved_file_held(std::path::Path::new("/account/Probe.lua")));
+        assert!(!script.saved_file_held(std::path::Path::new("/character/Probe.lua")));
+        assert_eq!(script.eval::<i64>("return ACCOUNT").unwrap(), 7);
+    }
 }
 
 /// Each verb's `Usage:` string as the reference's `.data` holds it; an error handler prints it.
@@ -651,7 +706,7 @@ fn load_bindings(lua: &Lua, name: &str, read: &Reader) {
 /// globals with no `setfenv`, between its files and `ADDON_LOADED` so saved values win; a missing
 /// file is skipped.
 fn load_saved_variables(lua: &Lua, i: usize) {
-    let (name, account, character, has_account, has_character) = {
+    let (name, account, character, has_account, has_character, saved_reader) = {
         let model = lua
             .app_data_ref::<crate::script::ModelCell>()
             .expect("model");
@@ -662,6 +717,7 @@ fn load_saved_variables(lua: &Lua, i: usize) {
             model.addons_saved_character.clone(),
             !a.saved_variables.is_empty(),
             !a.saved_variables_per_character.is_empty(),
+            model.addons_saved_reader.clone(),
         )
     };
     for (dir, declared) in [(account, has_account), (character, has_character)] {
@@ -670,7 +726,10 @@ fn load_saved_variables(lua: &Lua, i: usize) {
         }
         let Some(dir) = dir else { continue };
         let path = dir.join(format!("{name}.lua"));
-        let bytes = match std::fs::read(&path) {
+        let bytes = match saved_reader
+            .as_ref()
+            .map_or_else(|| std::fs::read(&path), |read| read(&path))
+        {
             Ok(bytes) => bytes,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue, // the first-run case
             Err(e) => {
@@ -929,6 +988,11 @@ pub(super) fn glue_index(
 
 /// The host's side: the registry, where its files live, and what to write back.
 impl super::UiScript {
+    /// Seat the host's saved-file store, shared by startup and LoadOnDemand addons.
+    pub fn set_addon_saved_reader(&self, reader: AddonSavedReader) {
+        self.model_mut().addons_saved_reader = Some(std::rc::Rc::from(reader));
+    }
+
     /// Seat the reader chain-sourced addons (`AddOnInfo::chain`) are read through.
     pub fn set_addon_chain_reader(&self, reader: AddonChainReader) {
         self.model_mut().addons_chain_reader = Some(std::rc::Rc::from(reader));

@@ -555,7 +555,7 @@ pub(crate) const REGION_LEAF_SHARED: [&str; 9] = [
 /// Texture-only, each in the client's Texture map: `GetVertexColor` though `SetVertexColor` is
 /// shared, and `SetGradientAlpha`, not FontString's `SetAlphaGradient`. No Texture `SetSize`;
 /// 3.3.5a's `SetRotation` is `0x48c860`.
-pub(crate) const TEXTURE_ONLY_METHODS: [&str; 13] = [
+pub(crate) const TEXTURE_ONLY_METHODS: [&str; 17] = [
     "SetGradient",
     "SetGradientAlpha",
     "GetTexture",
@@ -569,6 +569,10 @@ pub(crate) const TEXTURE_ONLY_METHODS: [&str; 13] = [
     "SetDesaturated",
     "GetVertexColor",
     "SetRotation",
+    "SetHorizTile",
+    "GetHorizTile",
+    "SetVertTile",
+    "GetVertTile",
 ];
 
 /// FontString-only: the font, text, justify and shadow block and the string metrics.
